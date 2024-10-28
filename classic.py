@@ -42,6 +42,8 @@ class Tetris:
         self.piece_y = 0
         self.combo = 0
         self.score = 0
+        self.total_lines_cleared = 0  # Total lines cleared counter
+        self.total_combo = 0  # Total combo counter
         self.game_over = False
         self.fall_time = 0
         self.fall_speed = 500  # Milliseconds
@@ -98,6 +100,12 @@ class Tetris:
                         return True
         return False
 
+    def display_counters(self):
+        """Display the counters in the console."""
+        print(f"Total Lines Cleared: {self.total_lines_cleared}")
+        print(f"Total Combos: {self.total_combo}")
+        print(f"Current Score: {self.score}")
+
     def lock_piece(self):
         for y, row in enumerate(self.current_piece):
             for x, cell in enumerate(row):
@@ -125,10 +133,17 @@ class Tetris:
             elif num_lines_cleared == 4:
                 self.score += 1200
 
+            # Update total lines cleared
+            self.total_lines_cleared += num_lines_cleared
+
             # Increase combo count and add bonus score for streaks
             self.combo += 1
             combo_bonus = 50 * self.combo  # Bonus points increase with combo count
             self.score += combo_bonus
+
+            # Update total combo counter if it's a new combo
+            if self.combo == 1:
+                self.total_combo += 1
 
         else:
             # Reset combo counter if no lines were cleared
@@ -147,7 +162,7 @@ class Tetris:
             print("Time's up! Game over.")
 
     def update(self, dt):
-
+        self.display_counters()
         self.check_time_limit()
 
         self.fall_time += dt
@@ -271,7 +286,7 @@ def game_loop():
     start_time = time.time()  # Start timing
 
     while not tetris.game_over:
-        dt = clock.tick(60)
+        dt = clock.tick(60) # Limit to 60 frames per second
         screen.fill((0, 0, 0))
         tetris.update(dt)
         tetris.draw_grid(screen)

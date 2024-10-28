@@ -221,20 +221,12 @@ class Tetris:
 
     def draw_score(self, screen):
         """Draw the score, total combos, lines cleared, and elapsed time on the screen."""
-        font = pygame.font.SysFont("Arial", 24)
-        score_text = font.render(f"Score: {self.score}", True, (255, 255, 255))
-        combos_text = font.render(f"Total Combos: {self.total_combos}", True, (255, 255, 255))
-        lines_text = font.render(f"Lines Cleared: {self.lines_cleared}", True, (255, 255, 255))
-
-        # Calculate elapsed time
-        self.elapsed_time = time.time() - self.start_time  # Update elapsed time
-        elapsed_time_text = font.render(f"Elapsed Time: {int(self.elapsed_time)}s", True, (255, 255, 255))
-
-        # Blit the texts to the screen
-        screen.blit(score_text, (10, 10))
-        screen.blit(combos_text, (10, 40))
-        screen.blit(lines_text, (10, 70))
-        screen.blit(elapsed_time_text, (10, 100))  # Display elapsed time below other stats
+        seconds = int(self.elapsed_time)
+        milliseconds = int((self.elapsed_time - seconds) * 100)
+        print(f"Score: {self.score}")
+        print(f"Total Combos: {self.total_combos}")
+        print(f"Lines Cleared: {self.lines_cleared}")
+        print(f"Elapsed Time: {seconds}.{milliseconds:02d} seconds")
 
 def evaluate_grid(grid):
     total_height = 0
