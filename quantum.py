@@ -1,8 +1,9 @@
 import pygame
 import random
 import time
-import cirq  # Import Cirq for quantum computing
-
+import cirq
+import numpy as np
+from scipy.optimize import minimize
 
 # Constants for the game
 GRID_WIDTH = 10
@@ -11,7 +12,6 @@ BLOCK_SIZE = 30
 SCREEN_WIDTH = GRID_WIDTH * BLOCK_SIZE
 SCREEN_HEIGHT = GRID_HEIGHT * BLOCK_SIZE
 TIME_LIMIT = 500
-
 
 # Colors for Tetris pieces (matches original Tetris colors)
 COLORS = [
@@ -36,44 +36,145 @@ TETROMINOES = [
     [[7, 7, 0], [0, 7, 7]]  # Z
 ]
 
+
+class QAOA_Optimizer:
+    def __init__(self, n_qubits, depth=1):
+        self.n_qubits = n_qubits
+        self.depth = depth
+        self.qubits = [cirq.LineQubit(i) for i in range(n_qubits)]
+
+    def create_mixing_hamiltonian(self):
+        """Create the mixing Hamiltonian for QAOA"""
+        return sum(cirq.X(qubit) for qubit in self.qubits)
+
+    def create_problem_hamiltonian(self, costs):
+        """Create the problem Hamiltonian based on move costs"""
+        terms = []
+        for i, cost in enumerate(costs):
+            # Convert binary representation to Pauli Z operations
+            bin_str = format(i, f'0{self.n_qubits}b')
+            term = 1
+            for j, bit in enumerate(bin_str):
+                if bit == '1':
+                    term *= cirq.Z(self.qubits[j])
+            terms.append(cost * term)
+        return sum(terms)
+
+    def create_qaoa_circuit(self, betas, gammas, costs):
+        """Create QAOA circuit with given parameters"""
+        circuit = cirq.Circuit()
+
+        # Initial superposition
+        circuit.append(cirq.H.on_each(*self.qubits))
+
+        # QAOA layers
+        for beta, gamma in zip(betas, gammas):
+            # Problem unitary
+            problem_hamiltonian = self.create_problem_hamiltonian(costs)
+            circuit.append(cirq.exponential(problem_hamiltonian, -1j * gamma))
+
+            # Mixing unitary
+            mixing_hamiltonian = self.create_mixing_hamiltonian()
+            circuit.append(cirq.exponential(mixing_hamiltonian, -1j * beta))
+
+        # Measurement
+        circuit.append(cirq.measure(*self.qubits, key='result'))
+        return circuit
+
+    def compute_expectation(self, params, costs):
+        """Compute expectation value for given parameters"""
+        n_params = len(params) // 2
+        betas = params[:n_params]
+        gammas = params[n_params:]
+
+        circuit = self.create_qaoa_circuit(betas, gammas, costs)
+        simulator = cirq.Simulator()
+        result = simulator.run(circuit, repetitions=100)
+
+        # Calculate expectation value
+        expectation = 0
+        for measurements in result.measurements['result']:
+            state_index = int(''.join(str(int(bit)) for bit in measurements), 2)
+            expectation += costs[state_index]
+
+        return expectation / 100
+
+    def optimize(self, costs):
+        """Optimize QAOA parameters"""
+        n_params = 2 * self.depth
+        initial_params = np.random.uniform(0, 2 * np.pi, n_params)
+
+        result = minimize(
+            lambda params: self.compute_expectation(params, costs),
+            initial_params,
+            method='COBYLA',
+            options={'maxiter': 100}
+        )
+
+        return result.x
+
+    def get_optimal_move(self, costs):
+        """Get optimal move using QAOA"""
+        optimal_params = self.optimize(costs)
+        n_params = len(optimal_params) // 2
+        betas = optimal_params[:n_params]
+        gammas = optimal_params[n_params:]
+
+        circuit = self.create_qaoa_circuit(betas, gammas, costs)
+        simulator = cirq.Simulator()
+        result = simulator.run(circuit, repetitions=100)
+
+        # Count measurements and return most common result
+        counts = {}
+        for measurements in result.measurements['result']:
+            state = int(''.join(str(int(bit)) for bit in measurements), 2)
+            counts[state] = counts.get(state, 0) + 1
+
+        return max(counts.items(), key=lambda x: x[1])[0]
+
+
+def quantum_enhanced_choice(possible_moves):
+    """Use QAOA to choose optimal move"""
+    # Extract scores and normalize them
+    scores = [move[0] for move in possible_moves]
+    min_score = min(scores)
+    max_score = max(scores)
+    normalized_scores = [(score - min_score) / (max_score - min_score) if max_score > min_score else 0.5
+                         for score in scores]
+
+    # Initialize QAOA optimizer
+    n_qubits = max(2, (len(possible_moves) - 1).bit_length())  # Minimum 2 qubits
+    qaoa = QAOA_Optimizer(n_qubits, depth=1)
+
+    # Get optimal move index using QAOA
+    optimal_index = qaoa.get_optimal_move(normalized_scores)
+
+    # Ensure index is within bounds
+    optimal_index = min(optimal_index, len(possible_moves) - 1)
+
+    return possible_moves[optimal_index]
+
 # Game class
 class Tetris:
     def __init__(self):
-        self.start_time = time.time()  # Track start time
-        self.elapsed_time = 0  # Track elapsed time
-        self.time_limit = TIME_LIMIT  # Set time limit
         self.grid = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        self.current_piece = None
-        self.piece_x = 0
-        self.piece_y = 0
-        self.bag = []
-        self.fill_bag()
-        self.spawn_new_piece()
-        self.score = 0
-        self.combo_streak = 0
-        self.total_combos = 0  # Total combo counter
-        self.lines_cleared = 0  # Number of lines cleared
-        self.game_over = False
-        self.fall_time = 0
-        self.fall_speed = 200  # Adjust fall speed
-        self.previous_lines_cleared = 0  # Track lines cleared in the previous move
-
-    def fill_bag(self):
-        """Fill the bag by shuffling all seven Tetrominoes."""
-        self.bag = TETROMINOES[:]  # Copy the list of Tetriminos
-        random.shuffle(self.bag)  # Shuffle the bag
-
-    def new_piece(self):
-        """Draw a new piece from the bag, refill the bag if empty."""
-        if not self.bag:
-            self.fill_bag()
-        return self.bag.pop()
-
-    def spawn_new_piece(self):
-        """Spawn a new piece in the middle of the grid."""
         self.current_piece = self.new_piece()
         self.piece_x = GRID_WIDTH // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
+        self.combo = 0
+        self.score = 0
+        self.total_lines_cleared = 0  # Total lines cleared counter
+        self.total_combo = 0  # Total combo counter
+        self.game_over = False
+        self.fall_time = 0
+        self.fall_speed = 500  # Milliseconds
+        self.time_limit = TIME_LIMIT  # Set time limit
+        self.start_time = time.time()  # Track start time
+        self.elapsed_time = 0  # Track elapsed time
+
+
+    def new_piece(self):
+        return random.choice(TETROMINOES)
 
     def draw_grid(self, screen):
         for y in range(GRID_HEIGHT):
@@ -120,70 +221,59 @@ class Tetris:
                         return True
         return False
 
+    def display_counters(self):
+        """Display the counters in the console."""
+        print(f"Total Lines Cleared: {self.total_lines_cleared}")
+        print(f"Total Combos: {self.total_combo}")
+        print(f"Current Score: {self.score}")
+
     def lock_piece(self):
-        # Lock the current piece into the grid
         for y, row in enumerate(self.current_piece):
             for x, cell in enumerate(row):
                 if cell:
-                    grid_y = y + self.piece_y
-                    grid_x = x + self.piece_x
-                    # Ensure we're not trying to access grid cells out of bounds
-                    if 0 <= grid_y < GRID_HEIGHT and 0 <= grid_x < GRID_WIDTH:
-                        self.grid[grid_y][grid_x] = cell
-
-        # Check for game over: if any block is locked into the top row
-        if any(self.grid[0][x] != 0 for x in range(GRID_WIDTH)):
-            self.game_over = True
-
-        # Clear any full lines
+                    self.grid[y + self.piece_y][x + self.piece_x] = cell
         self.clear_lines()
-
-        # Spawn a new piece only if the game is not over
-        if not self.game_over:
-            self.spawn_new_piece()
-
-            # Check if the new piece collides immediately after spawning (another game over condition)
-            if self.check_collision(self.current_piece, self.piece_x, self.piece_y):
-                self.game_over = True
+        self.current_piece = self.new_piece()
+        self.piece_x = GRID_WIDTH // 2 - len(self.current_piece[0]) // 2
+        self.piece_y = 0
+        if self.check_collision(self.current_piece, self.piece_x, self.piece_y):
+            self.game_over = True
 
     def clear_lines(self):
         lines_to_clear = [y for y, row in enumerate(self.grid) if all(row)]
-        num_lines_cleared = len(lines_to_clear)
+        num_lines_cleared = len(lines_to_clear)  # Number of lines cleared at once
 
         if num_lines_cleared > 0:
-            # Check if this is a combo (requires previous lines cleared to be > 0)
-            if self.previous_lines_cleared > 0:
-                self.combo_streak += 1  # Increment combo streak
-                self.total_combos += 1  # Increment total combos only once
-            else:
-                self.combo_streak = 1  # Start a new combo streak
+            # Update score based on traditional Tetris scoring
+            if num_lines_cleared == 1:
+                self.score += 40
+            elif num_lines_cleared == 2:
+                self.score += 100
+            elif num_lines_cleared == 3:
+                self.score += 300
+            elif num_lines_cleared == 4:
+                self.score += 1200
 
-            self.lines_cleared += num_lines_cleared  # Update lines cleared
-            self.score += self.calculate_score(num_lines_cleared)  # Update score based on cleared lines
+            # Update total lines cleared
+            self.total_lines_cleared += num_lines_cleared
+
+            # Increase combo count and add bonus score for streaks
+            self.combo += 1
+            combo_bonus = 50 * self.combo  # Bonus points increase with combo count
+            self.score += combo_bonus
+
+            # Update total combo counter if it's a new combo
+            if self.combo == 1:
+                self.total_combo += 1
 
         else:
-            # Reset combo streak if no lines are cleared
-            self.combo_streak = 0
+            # Reset combo counter if no lines were cleared
+            self.combo = 0
 
-        # Update previous lines cleared for the next move
-        self.previous_lines_cleared = num_lines_cleared
-
-        # Clear the lines
+        # Clear the lines from the grid
         for y in lines_to_clear:
             del self.grid[y]
             self.grid.insert(0, [0] * GRID_WIDTH)
-
-    def calculate_score(self, num_lines):
-        """Calculate score based on the number of lines cleared."""
-        if num_lines == 1:
-            return 40
-        elif num_lines == 2:
-            return 100
-        elif num_lines == 3:
-            return 300
-        elif num_lines == 4:
-            return 1200
-        return 0
 
     def check_time_limit(self):
         """Check if the time limit has been reached."""
@@ -192,41 +282,16 @@ class Tetris:
             self.game_over = True  # End the game if time limit is reached
             print("Time's up! Game over.")
 
-    def find_best_move(self):
-        """Find the best move by simulating all possible placements and choosing the highest scoring one."""
-        possible_moves = generate_moves(self.current_piece, self.grid)
-        best_move = max(possible_moves, key=lambda move: move[0])  # Maximize score
-        return best_move  # Return the best score, x position, and rotation
-
     def update(self, dt):
-        # Call the time limit check function
+        self.display_counters()
         self.check_time_limit()
 
-        if not self.game_over:
-            # Evaluate the best move using AI-based piece placement
-            best_score, best_x, best_rotation = self.find_best_move()
+        self.fall_time += dt
+        if self.fall_time > self.fall_speed:
+            self.fall_time = 0
+            if not self.move_piece(0, 1):
+                self.lock_piece()
 
-            # Apply the best move
-            for _ in range(best_rotation):
-                self.rotate_piece()
-
-            # Move the piece to the best x position
-            while self.piece_x < best_x:
-                self.move_piece(1, 0)
-            while self.piece_x > best_x:
-                self.move_piece(-1, 0)
-
-            # Perform a hard drop after the best move is found
-            self.hard_drop()
-
-    def draw_score(self, screen):
-        """Draw the score, total combos, lines cleared, and elapsed time on the screen."""
-        seconds = int(self.elapsed_time)
-        milliseconds = int((self.elapsed_time - seconds) * 100)
-        print(f"Score: {self.score}")
-        print(f"Total Combos: {self.total_combos}")
-        print(f"Lines Cleared: {self.lines_cleared}")
-        print(f"Elapsed Time: {seconds}.{milliseconds:02d} seconds")
 
 def evaluate_grid(grid):
     total_height = 0
@@ -300,78 +365,54 @@ def lock_piece_simulated(grid, piece, x_offset, y_offset):
             if cell:
                 grid[y + y_offset][x + x_offset] = cell
 
-
-# Function to quantum-enhance the move selection
-def quantum_enhanced_choice(possible_moves):
-    # Only consider the top 3 moves to add randomness in choice
-    top_moves = sorted(possible_moves, key=lambda x: x[0], reverse=True)[:3]
-
-    # Define qubits and a circuit
-    qubits = [cirq.LineQubit(i) for i in range(2)]  # 2 qubits for a choice among 3 options
-    circuit = cirq.Circuit()
-
-    # Create a quantum superposition
-    circuit.append([cirq.H(qubits[0]), cirq.H(qubits[1])])
-
-    # Measure the qubits
-    circuit.append([cirq.measure(qubits[0], key='q0'), cirq.measure(qubits[1], key='q1')])
-
-    # Run the quantum circuit
-    simulator = cirq.Simulator()
-    result = simulator.run(circuit, repetitions=1)
-    result_bits = result.measurements['q0'][0][0] * 2 + result.measurements['q1'][0][0]
-
-    # Map quantum result to a move selection (0, 1, 2)
-    if result_bits >= len(top_moves):
-        result_bits = len(top_moves) - 1  # Handle overflow due to quantum randomness
-
-    selected_move = top_moves[result_bits]
-    return selected_move
-
 def choose_best_move(tetris):
     piece = tetris.current_piece
     grid = tetris.grid
     possible_moves = generate_moves(piece, grid)
+    best_move = max(possible_moves, key=lambda move: move[0], default=None)
+    return best_move  # (score, x_position, rotation)
 
-    # Use the quantum-enhanced decision to select the move
-    best_move = quantum_enhanced_choice(possible_moves)
-    return best_move
+def apply_move(tetris, best_move):
+    if best_move is None:
+        return
+    score, x_position, rotation = best_move
+    for _ in range(rotation):
+        tetris.rotate_piece()
+    while tetris.piece_x < x_position:
+        tetris.move_piece(1, 0)
+    while tetris.piece_x > x_position:
+        tetris.move_piece(-1, 0)
+    tetris.hard_drop()
 
-def main():
-    pygame.init()
+
+# Main game loop
+def game_loop():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Tetris with Quantum AI")
+    pygame.display.set_caption('Tetris AI')
     clock = pygame.time.Clock()
     tetris = Tetris()
 
+    start_time = time.time()  # Start timing
+
     while not tetris.game_over:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                tetris.game_over = True
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT:
-                    tetris.move_piece(-1, 0)
-                if event.key == pygame.K_RIGHT:
-                    tetris.move_piece(1, 0)
-                if event.key == pygame.K_DOWN:
-                    tetris.move_piece(0, 1)
-                if event.key == pygame.K_UP:
-                    tetris.rotate_piece()
-
-        # Update the game state
-        dt = clock.tick(30)  # Limit to 30 frames per second
+        dt = clock.tick(60) # Limit to 60 frames per second
+        screen.fill((0, 0, 0))
         tetris.update(dt)
+        tetris.draw_grid(screen)
+        tetris.draw_piece(screen, tetris.current_piece, tetris.piece_x, tetris.piece_y)
 
-        # Draw everything
-        screen.fill((0, 0, 0))  # Clear the screen
-        tetris.draw_grid(screen)  # Draw the grid
-        tetris.draw_piece(screen, tetris.current_piece, tetris.piece_x, tetris.piece_y)  # Draw current piece
-        tetris.draw_score(screen)  # Draw the score and elapsed time
-        pygame.display.flip()  # Update the display
+        # AI Move Selection
+        best_move = choose_best_move(tetris)
+        apply_move(tetris, best_move)
 
+        pygame.display.flip()
+
+        elapsed_time = time.time() - start_time  # Calculate elapsed time
+        print(f"Elapsed time: {elapsed_time:.2f} seconds | Score: {tetris.score}")  # Print elapsed time to console
+
+    print("Game Over! Score:", tetris.score)
     pygame.quit()
 
 if __name__ == "__main__":
-    main()
-
-pygame.quit()
+    pygame.init()
+    game_loop()
