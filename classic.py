@@ -37,7 +37,8 @@ TETROMINOES = [
 class Tetris:
     def __init__(self):
         self.grid = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        self.current_piece = self.new_piece()
+        self.bag = self.new_bag()  # Initialize the bag
+        self.current_piece = self.bag.pop()  # Get the first piece from the bag
         self.piece_x = GRID_WIDTH // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
         self.combo = 0
@@ -51,9 +52,17 @@ class Tetris:
         self.start_time = time.time()  # Track start time
         self.elapsed_time = 0  # Track elapsed time
 
+    def new_bag(self):
+        """Create a new shuffled bag of tetrominoes."""
+        bag = TETROMINOES[:]
+        random.shuffle(bag)
+        return bag
 
     def new_piece(self):
-        return random.choice(TETROMINOES)
+        """Get a new piece from the bag, refill if empty."""
+        if not self.bag:  # If the bag is empty, refill it
+            self.bag = self.new_bag()
+        return self.bag.pop()  # Get the next piece from the bag
 
     def draw_grid(self, screen):
         for y in range(GRID_HEIGHT):
@@ -286,7 +295,7 @@ def game_loop():
     start_time = time.time()  # Start timing
 
     while not tetris.game_over:
-        dt = clock.tick(60) # Limit to 60 frames per second
+        dt = clock.tick(1000) # Limit to 60 frames per second
         screen.fill((0, 0, 0))
         tetris.update(dt)
         tetris.draw_grid(screen)

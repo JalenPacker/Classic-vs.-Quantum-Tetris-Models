@@ -158,23 +158,33 @@ def quantum_enhanced_choice(possible_moves):
 class Tetris:
     def __init__(self):
         self.grid = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+        self.bag = self.generate_new_bag()
         self.current_piece = self.new_piece()
         self.piece_x = GRID_WIDTH // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
         self.combo = 0
         self.score = 0
-        self.total_lines_cleared = 0  # Total lines cleared counter
-        self.total_combo = 0  # Total combo counter
+        self.total_lines_cleared = 0
+        self.total_combo = 0
         self.game_over = False
         self.fall_time = 0
-        self.fall_speed = 500  # Milliseconds
-        self.time_limit = TIME_LIMIT  # Set time limit
-        self.start_time = time.time()  # Track start time
-        self.elapsed_time = 0  # Track elapsed time
+        self.fall_speed = 500
+        self.time_limit = TIME_LIMIT
+        self.start_time = time.time()
+        self.elapsed_time = 0
 
+
+    def generate_new_bag(self):
+        """Generate a new 7-bag of tetrominoes and shuffle it."""
+        bag = TETROMINOES[:]
+        random.shuffle(bag)
+        return bag
 
     def new_piece(self):
-        return random.choice(TETROMINOES)
+        """Return the next piece from the bag, and refresh the bag if empty."""
+        if not self.bag:
+            self.bag = self.generate_new_bag()
+        return self.bag.pop()
 
     def draw_grid(self, screen):
         for y in range(GRID_HEIGHT):
@@ -395,7 +405,7 @@ def game_loop():
     start_time = time.time()  # Start timing
 
     while not tetris.game_over:
-        dt = clock.tick(60) # Limit to 60 frames per second
+        dt = clock.tick(1000) # Limit to 60 frames per second
         screen.fill((0, 0, 0))
         tetris.update(dt)
         tetris.draw_grid(screen)
