@@ -1,4 +1,5 @@
-Senior Project: Advancing Artificial Intelligence in Gaming with Quantum Computing: A Comparative Analysis of Heuristic Models and the Quantum Approximate Optimization Algorithm (QAOA)
+Senior Project: 
+Advancing Artificial Intelligence in Gaming with Quantum Computing: A Comparative Analysis of Heuristic Models and the Quantum Approximate Optimization Algorithm (QAOA)
 
 
 My goal is to personally observe and identify the advantages and efficiencies quantum computing has over classical computing in a practical environment.
