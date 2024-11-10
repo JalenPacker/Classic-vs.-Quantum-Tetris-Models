@@ -1,4 +1,5 @@
-Senior Project: Enhancing Artificial Intelligence in Gaming Through Quantum Computing: Exploring Innovative Applications and Algorithms
+Senior Project: Advancing Artificial Intelligence in Gaming with Quantum Computing: A Comparative Analysis of Heuristic Models and the Quantum Approximate Optimization Algorithm (QAOA)
+
 
 My goal is to personally observe and identify the advantages and efficiencies quantum computing has over classical computing in a practical environment.
 
@@ -7,3 +8,4 @@ Why? The Heuristic model is one of the most widely used in the gaming world, and
 
 While these models play Tetris, I try to evaluate their performance through simple means like the elapsed time until game over and the score accumulated,
   which contains a combo system rewarding extra points for consecutive scoring -- this way I can get better insight into the models' decision-making complexity.
+  These stats can be found in the Comparative Analysis document.
